@@ -9,6 +9,7 @@ template contract or plugin layout is a major.
 ## [Unreleased]
 
 ### Added
+- `postgres-expert` skill covering PostgreSQL 17 schema architecture, zero-downtime migrations, and execution plan optimization.
 
 - `docker-expert` skill for Docker 27+, BuildKit, multi-stage images, Compose, and container hardening.
 - `scripts/new_skill.py` scaffolds a skill directory, a pre-filled `SKILL.md`,
@@ -30,6 +31,7 @@ template contract or plugin layout is a major.
 ## [0.1.0] - 2026-08-18
 
 ### Added
+- `postgres-expert` skill covering PostgreSQL 17 schema architecture, zero-downtime migrations, and execution plan optimization.
 
 - 14 skills across core, frontend, backend, mobile, infra, and QA:
   `engineering-rules`, `react-expert`, `vue-expert`, `nestjs-expert`,
