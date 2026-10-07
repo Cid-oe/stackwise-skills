@@ -4,7 +4,7 @@ description: Use when working with *.sql, migrations, EXPLAIN ANALYZE, indexes, 
 license: MIT
 metadata:
   version: "0.1.0"
-  category: backend
+  category: data
   frameworks: "PostgreSQL 17, psql, pg_stat_statements, pgvector"
   triggers: "*.sql, migrations, EXPLAIN ANALYZE, indexes, psql, postgres, postgresql, pg_stat_statements, pgvector, vacuum, wal, btree, brin, gin"
   related: go-expert, nestjs-expert, terraform-expert
@@ -27,7 +27,7 @@ Senior PostgreSQL database engineer specializing in PostgreSQL 17 schema archite
 
 1. **Analyze** - Inspect target tables, row counts, volume growth, constraints, and query access patterns. Review `pg_stat_statements` or slow query logs to understand where execution time is spent before proposing index or schema changes.
 2. **Implement** - Write standard SQL adhering to PostgreSQL 17 standards: prefer `GENERATED ALWAYS AS IDENTITY` over legacy `SERIAL`, use `TIMESTAMPTZ` for timestamps, and use declarative constraints. When altering production tables, use safe non-blocking patterns.
-3. **Verify SQL syntax and migration safety** - Validate migration statements and queries with `psql -f <migration.sql> --single-transaction --dry-run` or a local staging container (`pg_dump` schema verification). If syntax or locking violations are detected, fix and re-run until clean before proceeding.
+3. **Verify SQL syntax and migration safety** - Validate migration statements and queries by running the migration against a local PostgreSQL 17 staging container. If syntax or locking violations are detected, fix and re-run until clean before proceeding.
 4. **Test execution plan** - Run `EXPLAIN (ANALYZE, BUFFERS) <query>` against realistic data volumes. Verify that the planner chooses index scans or bitmap heap scans where appropriate and that shared buffer hits dominate over disk reads. Fix plan regressions and re-run until clean.
 5. **Prove it works** - Execute the complete transaction lifecycle against a live PostgreSQL 17 instance. Test rollback behavior, check lock hold durations with `pg_locks`, and confirm data integrity. If verification yields locking delays or query regressions, fix and re-run until the observed behavior meets latency and safety targets.
 
@@ -37,14 +37,14 @@ Load detailed guidance only when the task needs it:
 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
-| Schema & Types | `references/schema-and-types.md` | Primary keys, IDENTITY vs SERIAL, UUIDv7, JSONB, constraints, data types |
+| Schema & Types | `references/schema-and-types.md` | Primary keys, IDENTITY vs SERIAL, UUID, JSONB, constraints, data types |
 | Index Engineering | `references/indexes-and-execution.md` | B-tree, partial, covering (INCLUDE), BRIN, GIN, expression indexes, EXPLAIN ANALYZE |
 | Zero-Downtime Migrations | `references/zero-downtime-migrations.md` | Lock levels, CREATE INDEX CONCURRENTLY, adding columns, lock_timeout, safe schema changes |
 | Query Optimization | `references/query-optimization.md` | CTE optimization, window functions, LATERAL joins, pagination (keyset vs offset), grouping sets |
 
 ## Key Patterns
 
-**PostgreSQL 17 Schema Design with IDENTITY and UUIDv7:**
+**PostgreSQL 17 Schema Design with IDENTITY and UUID:**
 
 ```sql
 CREATE TABLE orders (
@@ -71,6 +71,7 @@ ALTER TABLE orders ADD COLUMN cancellation_reason TEXT;
 
 -- Step 3: Create supporting index concurrently without locking writes
 COMMIT;
+RESET statement_timeout;
 CREATE INDEX CONCURRENTLY idx_orders_status_pending 
 ON orders (customer_id, created_at DESC) 
 WHERE status = 'pending';

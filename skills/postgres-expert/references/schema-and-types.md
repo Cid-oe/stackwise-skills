@@ -91,3 +91,45 @@ CREATE TABLE customer_events (
 -- payload ? 'session_id' (key exists)
 -- payload @> '{"action": "checkout"}' (contains key-value)
 ```
+
+## Table Partitioning
+
+For timeseries data, audit logs, or huge event streams that exceed memory capacity, use declarative table partitioning. Partitioning allows for efficient bulk deletion (dropping a partition) and partition pruning during queries.
+
+```sql
+CREATE TABLE audit_events (
+    event_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    created_at TIMESTAMPTZ NOT NULL,
+    action TEXT NOT NULL,
+    PRIMARY KEY (event_id, created_at)
+) PARTITION BY RANGE (created_at);
+
+-- Create a partition for a specific month
+CREATE TABLE audit_events_2026_10 PARTITION OF audit_events
+FOR VALUES FROM ('2026-10-01 00:00:00+00') TO ('2026-11-01 00:00:00+00');
+```
+Note: Partitioning keys must be included in the primary key and unique constraints.
+
+## Declarative Constraints
+
+Constraints guarantee data integrity at the database level, preventing application bugs from permanently corrupting data.
+
+### Exclusion Constraints
+
+Exclusion constraints are more powerful than unique constraints. They guarantee that if any two rows are compared on the specified columns, at least one of the specified operators will return false.
+
+```sql
+-- Requires btree_gist extension
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+-- Prevent overlapping bookings for the same meeting room
+CREATE TABLE room_bookings (
+    booking_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    room_id BIGINT NOT NULL,
+    booking_period TSTZRANGE NOT NULL,
+    EXCLUDE USING GIST (
+        room_id WITH =,
+        booking_period WITH &&
+    )
+);
+```

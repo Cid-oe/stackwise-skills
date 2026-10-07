@@ -49,10 +49,40 @@ ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT false;
 
 -- For volatile defaults (e.g. gen_random_uuid()), add column nullable first:
 ALTER TABLE orders ADD COLUMN token UUID;
--- Backfill in batches:
-UPDATE orders SET token = gen_random_uuid() WHERE token IS NULL;
--- Add constraint NOT VALID then validate:
+
+-- Backfill in small batches to avoid locking huge numbers of rows and blooming the table:
+DO $$
+DECLARE
+    row_count INT;
+BEGIN
+    LOOP
+        WITH to_update AS (
+            SELECT order_id
+            FROM orders
+            WHERE token IS NULL
+            LIMIT 5000
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE orders
+        SET token = gen_random_uuid()
+        FROM to_update
+        WHERE orders.order_id = to_update.order_id;
+
+        GET DIAGNOSTICS row_count = ROW_COUNT;
+        EXIT WHEN row_count = 0;
+        COMMIT;
+    END LOOP;
+END $$;
+
+-- Add a CHECK constraint as NOT VALID, which is fast and does not scan the table
+ALTER TABLE orders ADD CONSTRAINT token_not_null CHECK (token IS NOT NULL) NOT VALID;
+
+-- Validate the constraint in the background (takes SHARE UPDATE EXCLUSIVE, non-blocking)
+ALTER TABLE orders VALIDATE CONSTRAINT token_not_null;
+
+-- Safely swap to SET NOT NULL now that PostgreSQL knows all rows pass the check
 ALTER TABLE orders ALTER COLUMN token SET NOT NULL;
+ALTER TABLE orders DROP CONSTRAINT token_not_null;
 ```
 
 ## Adding Foreign Keys Safely
@@ -70,3 +100,14 @@ NOT VALID;
 ALTER TABLE line_items
 VALIDATE CONSTRAINT fk_line_items_order_id;
 ```
+
+## Enum Migrations
+
+Adding values to enums must be done safely outside a transaction block:
+
+```sql
+-- Adds a new value without rebuilding the table
+ALTER TYPE order_status ADD VALUE 'refunded';
+```
+
+Note that enum values cannot be removed without rebuilding the entire type. For dynamic lists that shrink, use a lookup table instead of an enum.

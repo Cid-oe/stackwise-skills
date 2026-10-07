@@ -76,7 +76,7 @@ WHERE deleted_at IS NULL;
 
 - **B-Tree**: Default, general purpose for equality, range, and sort operations.
 - **BRIN (Block Range Index)**: Extremely compact for append-only, naturally sorted timeseries or sequential IDs.
-- **GIN (Generalized Inverted Index)**: For JSONB (`@>`, `?`), full-text search (`tsvector`), and array lookups (`&&`).
+- **GIN (Generalized Inverted Index)**: For JSONB (`jsonb_ops` supports `@>`, `?`; `jsonb_path_ops` supports only `@>`), full-text search (`tsvector`), and array lookups (`&&`).
 
 ```sql
 -- Timeseries BRIN index (uses kilobytes instead of gigabytes):
@@ -87,3 +87,48 @@ ON audit_logs USING BRIN (created_at);
 CREATE INDEX idx_documents_payload_gin 
 ON documents USING GIN (metadata jsonb_path_ops);
 ```
+
+## Advanced Indexing Strategies
+
+### Covering Indexes with INCLUDE
+
+To achieve an index-only scan, an index must cover all columns referenced in the `SELECT`, `WHERE`, `ORDER BY`, and `GROUP BY` clauses. Adding non-key columns to the `INCLUDE` clause allows the index to satisfy the query without visiting the heap, while keeping the B-tree lean:
+
+```sql
+-- The B-tree is organized by (customer_id, status)
+-- The payload (total_amount, created_at) is simply stored in the leaf nodes
+CREATE INDEX idx_orders_customer_status_inc
+ON orders (customer_id, status)
+INCLUDE (total_amount, created_at);
+```
+
+### Expression Indexes
+
+Expression indexes evaluate a function or operation at insertion time and index the result. This is highly effective for case-insensitive searches or extracting JSONB properties.
+
+```sql
+-- Case-insensitive search
+CREATE INDEX idx_users_email_lower
+ON users (LOWER(email));
+
+-- Indexing a specific JSONB property
+CREATE INDEX idx_users_country
+ON users ((preferences->>'country'));
+```
+
+When querying, the expression in the `WHERE` clause must exactly match the index expression.
+
+### Analyzing Index Usage
+
+Regularly audit index usage to identify unused or redundant indexes. Unused indexes consume disk space and slow down `INSERT`, `UPDATE`, and `DELETE` operations.
+
+```sql
+-- Find unused indexes
+SELECT schemaname, relname, indexrelname, idx_scan
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+  AND indisunique IS FALSE
+ORDER BY relname;
+```
+
+_Note on JSONB GIN indexes:_ The default `jsonb_ops` operator class supports `@>`, `?`, `?&`, and `?|`. The `jsonb_path_ops` class is more space-efficient but only supports the `@>` (contains) operator. Choose the operator class based on the queries your application executes.
